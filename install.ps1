@@ -34,6 +34,15 @@ go install "${Repo}@latest"
 $GoPath = go env GOPATH
 $GoBin  = Join-Path $GoPath "bin"
 
+# go install names the binary after the module's last path segment: pg-factory.
+# Rename it to the short name "pg" that the tool expects to be called as.
+$builtExe  = Join-Path $GoBin "pg-factory.exe"
+$targetExe = Join-Path $GoBin "pg.exe"
+if (Test-Path $builtExe) {
+    if (Test-Path $targetExe) { Remove-Item $targetExe -Force }
+    Rename-Item -Path $builtExe -NewName "pg.exe"
+}
+
 # ── ensure GOBIN is on the user PATH ─────────────────────────────────────────
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if ($userPath -notlike "*$GoBin*") {
@@ -47,6 +56,11 @@ Write-Success "pg installed → $GoBin\pg.exe"
 Write-Host ""
 
 # ── first-time setup wizard ───────────────────────────────────────────────────
-Write-Info "Launching first-time setup..."
-Write-Host ""
-& "$GoBin\pg.exe" init
+$ConfigFile = Join-Path $env:USERPROFILE ".pgfactory\config.json"
+if (-not (Test-Path $ConfigFile)) {
+    Write-Info "Launching first-time setup..."
+    Write-Host ""
+    & "$GoBin\pg.exe" init
+} else {
+    Write-Info "Config already exists. Run 'pg init' to reconfigure."
+}

@@ -32,6 +32,12 @@ go install "${REPO}@latest"
 
 GOBIN="$(go env GOPATH)/bin"
 
+# go install names the binary after the module's last path segment: pg-factory.
+# Rename it to the short name "pg" that the tool expects to be called as.
+if [[ -f "$GOBIN/pg-factory" ]]; then
+  mv "$GOBIN/pg-factory" "$GOBIN/pg"
+fi
+
 # ── ensure GOBIN is on PATH ───────────────────────────────────────────────────
 if ! echo "$PATH" | tr ':' '\n' | grep -qx "$GOBIN"; then
   if [ -n "${ZSH_VERSION:-}" ]; then
