@@ -7,7 +7,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$Repo = "github.com/Mgkusumaputra/pg-factory"
+$Repo    = "github.com/Mgkusumaputra/pg-factory"
+$RepoURL = "https://github.com/Mgkusumaputra/pg-factory.git"
 
 function Write-Info    ($msg) { Write-Host "  `u{25B8} $msg" -ForegroundColor Cyan }
 function Write-Success ($msg) { Write-Host "  `u{2713} $msg" -ForegroundColor Green }
@@ -27,20 +28,62 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Warn "Install: https://docs.docker.com/get-docker/"
 }
 
-# ── install ───────────────────────────────────────────────────────────────────
-Write-Info "Installing pg-factory..."
-go install "${Repo}@latest"
+# ── resolve GOBIN (respects $env:GOBIN override) ─────────────────────────────
+$GoBin = go env GOBIN
+if (-not $GoBin) { $GoBin = Join-Path (go env GOPATH) "bin" }
+New-Item -ItemType Directory -Force -Path $GoBin | Out-Null
+$TargetExe = Join-Path $GoBin "pg.exe"
 
-$GoPath = go env GOPATH
-$GoBin  = Join-Path $GoPath "bin"
+# ── build ─────────────────────────────────────────────────────────────────────
+# Strategy: build from local source if we're in the repo root (dev workflow),
+# otherwise clone from GitHub and build — avoids the go install binary-rename
+# problem where go install always names the binary after the module path
+# ("pg-factory") rather than the intended command name ("pg").
 
-# go install names the binary after the module's last path segment: pg-factory.
-# Rename it to the short name "pg" that the tool expects to be called as.
-$builtExe  = Join-Path $GoBin "pg-factory.exe"
-$targetExe = Join-Path $GoBin "pg.exe"
-if (Test-Path $builtExe) {
-    if (Test-Path $targetExe) { Remove-Item $targetExe -Force }
-    Rename-Item -Path $builtExe -NewName "pg.exe"
+$ScriptDir = Split-Path -Parent $PSCommandPath
+$IsInRepo  = (Test-Path (Join-Path $ScriptDir "main.go")) -and
+             (Test-Path (Join-Path $ScriptDir "go.mod"))
+
+if ($IsInRepo) {
+    # ── local / dev path ──────────────────────────────────────────────────────
+    Write-Info "Building from local source..."
+    Push-Location $ScriptDir
+    go build -ldflags="-s -w" -o $TargetExe .
+    Pop-Location
+} else {
+    # ── remote / end-user path ────────────────────────────────────────────────
+    Write-Info "Cloning and building pg-factory..."
+    $TmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "pg-factory-install"
+    if (Test-Path $TmpDir) { Remove-Item $TmpDir -Recurse -Force }
+
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        git clone --depth 1 $RepoURL $TmpDir 2>&1 | Out-Null
+    } else {
+        # Fallback: go install + rename (git not available)
+        Write-Info "git not found, falling back to go install..."
+        go install "${Repo}@latest"
+        $BuiltExe = Join-Path $GoBin "pg-factory.exe"
+        if (Test-Path $BuiltExe) {
+            if (Test-Path $TargetExe) { Remove-Item $TargetExe -Force }
+            Rename-Item -Path $BuiltExe -NewName "pg.exe"
+        }
+        if (-not (Test-Path $TargetExe)) {
+            Write-Fail "Installation failed: pg.exe not found at $TargetExe"
+        }
+        # Skip the build step below
+        $TmpDir = $null
+    }
+
+    if ($TmpDir -and (Test-Path $TmpDir)) {
+        Push-Location $TmpDir
+        go build -ldflags="-s -w" -o $TargetExe .
+        Pop-Location
+        Remove-Item $TmpDir -Recurse -Force
+    }
+}
+
+if (-not (Test-Path $TargetExe)) {
+    Write-Fail "Build failed: pg.exe not found at $TargetExe"
 }
 
 # ── ensure GOBIN is on the user PATH ─────────────────────────────────────────
@@ -52,7 +95,7 @@ if ($userPath -notlike "*$GoBin*") {
     Write-Warn "Restart your terminal for the change to take effect in new sessions."
 }
 
-Write-Success "pg installed → $GoBin\pg.exe"
+Write-Success "pg installed → $TargetExe"
 Write-Host ""
 
 # ── first-time setup wizard ───────────────────────────────────────────────────
@@ -60,7 +103,7 @@ $ConfigFile = Join-Path $env:USERPROFILE ".pgfactory\config.json"
 if (-not (Test-Path $ConfigFile)) {
     Write-Info "Launching first-time setup..."
     Write-Host ""
-    & "$GoBin\pg.exe" init
+    & $TargetExe init
 } else {
     Write-Info "Config already exists. Run 'pg init' to reconfigure."
 }
