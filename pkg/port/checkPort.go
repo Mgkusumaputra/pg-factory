@@ -1,27 +1,27 @@
 package port
 
 import (
-	"bufio"
 	"fmt"
-	"os/exec"
-	"regexp"
-	"strings"
+	"net"
+	"time"
 )
 
-func checkLocalPort(port int) bool {
-	// Run netstat -ano
-	cmd := exec.Command("netstat", "-ano")
-	out, err := cmd.Output()
+// checkLocalPort returns true when the given port is already bound on the
+// local machine. Uses a pure-Go net.Listen probe — no external binary needed,
+// works identically on Windows, macOS, and Linux.
+func checkLocalPort(p int) bool {
+	// First try binding: if Listen succeeds the port is free.
+	l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
 	if err != nil {
-		return false
+		return true // couldn't bind → port is in use
 	}
+	l.Close()
 
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	re := regexp.MustCompile(fmt.Sprintf(`:%d\s+.*LISTENING`, port))
-	for scanner.Scan() {
-		if re.MatchString(scanner.Text()) {
-			return true
-		}
+	// Also try dialing to catch ports in TIME_WAIT or held by another process.
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", p), 200*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		return true // something answered → port is in use
 	}
 	return false
 }

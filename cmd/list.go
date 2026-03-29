@@ -1,10 +1,10 @@
-/*
-Copyright © 2026 Mgkusumaputra
-*/
 package cmd
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -12,14 +12,42 @@ import (
 
 	"github.com/Mgkusumaputra/pg-factory/pkg/config"
 	"github.com/Mgkusumaputra/pg-factory/pkg/docker"
+	"github.com/Mgkusumaputra/pg-factory/pkg/project"
 	"github.com/Mgkusumaputra/pg-factory/pkg/state"
 )
+
+// column definitions: index, header text, fixed width
+var tableCols = []struct {
+	header string
+	width  int
+}{
+	{"NAME", 18},
+	{"STATUS", 11},
+	{"PORT", 7},
+	{"DATABASE", 14},
+	{"VERSION", 12},
+	{"PROJECTS", 22},
+}
 
 var listCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List all managed Postgres instances",
+	Long: `List displays all Postgres instances registered with pg-factory.
+
+Each row shows the instance name, running status, host port, database name,
+Postgres version, and the project directories that have linked to it.
+
+Use --project to filter the table to only instances linked to the current
+working directory (auto-detected from the directory name).
+
+Examples:
+  pg list
+  pg ls
+  pg list --project`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		filterByProject, _ := cmd.Flags().GetBool("project")
+
 		instancesPath, err := config.InstancesPath()
 		if err != nil {
 			return err
@@ -31,41 +59,123 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(list.Instances) == 0 {
-			fmt.Println("No instances found. Run `pg create --name <name>` to get started.")
+			PrintInfo("No instances found. Run `pg create` from your project directory to get started.")
 			return nil
 		}
 
+		// ── Load project store ───────────────────────────────────────────────
+		projectsPath, err := config.ProjectsPath()
+		if err != nil {
+			return err
+		}
+		ps := project.New(projectsPath)
+		pm, _ := ps.Load()
+
+		cwd, _ := os.Getwd()
+		currentProject := filepath.Base(cwd)
+
 		svc := docker.NewDockerService(10 * time.Second)
+		runningSet, err := svc.RunningContainerNames()
+		if err != nil {
+			// non-fatal — fall back to all-stopped display
+			runningSet = map[string]bool{}
+		}
 
-		header := lipgloss.NewStyle().Bold(true).Underline(true)
-		runningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ade80"))
-		stoppedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#f87171"))
+		// ── Cell builder — lipgloss.Width() pads correctly past ANSI codes ───
+		cell := func(s string, w int, style lipgloss.Style) string {
+			return style.Width(w).Render(s)
+		}
 
-		fmt.Printf("%-20s %-10s %-8s %-12s %-10s\n",
-			header.Render("NAME"),
-			header.Render("STATUS"),
-			header.Render("PORT"),
-			header.Render("DB"),
-			header.Render("VERSION"),
-		)
+		sep := lipgloss.NewStyle().Foreground(colorBorder).Render(" │ ")
 
+		// ── Header ───────────────────────────────────────────────────────────
+		fmt.Println()
+		headerParts := make([]string, len(tableCols))
+		for i, col := range tableCols {
+			headerParts[i] = cell(col.header, col.width, HeaderStyle)
+		}
+		fmt.Println("  " + strings.Join(headerParts, sep))
+
+		// ── Divider ──────────────────────────────────────────────────────────
+		divStyle := lipgloss.NewStyle().Foreground(colorBorder)
+		divParts := make([]string, len(tableCols))
+		for i, col := range tableCols {
+			divParts[i] = divStyle.Render(strings.Repeat("─", col.width))
+		}
+		fmt.Println("  " + strings.Join(divParts, divStyle.Render("─┼─")))
+
+		// ── Rows ─────────────────────────────────────────────────────────────
+		baseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0"))
+		dimStyle2  := lipgloss.NewStyle().Foreground(colorDim)
+		runStyle   := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
+		stopStyle  := lipgloss.NewStyle().Foreground(colorError)
+
+		shown := 0
 		for _, inst := range list.Instances {
-			name := inst.Container[4:] // strip "pgf-" prefix
-			isRunning, _ := svc.ContainerRunning(inst.Container)
+			instName := inst.Container[4:] // strip "pgf-"
 
-			statusStr := stoppedStyle.Render("stopped")
-			if isRunning {
-				statusStr = runningStyle.Render("running")
+			// --project filter
+			if filterByProject {
+				linked := false
+				for _, n := range pm[currentProject] {
+					if n == instName {
+						linked = true
+						break
+					}
+				}
+				if !linked {
+					continue
+				}
 			}
 
-			fmt.Printf("%-20s %-10s %-8d %-12s %-10s\n",
-				name, statusStr, inst.Port, inst.Db, inst.Version,
-			)
+			isRunning := runningSet[inst.Container]
+
+			var statusCell string
+			if isRunning {
+				statusCell = cell("● running", tableCols[1].width, runStyle)
+			} else {
+				statusCell = cell("○ stopped", tableCols[1].width, stopStyle)
+			}
+
+			// Collect linked project names
+			var linked []string
+			for proj, instances := range pm {
+				for _, n := range instances {
+					if n == instName {
+						linked = append(linked, proj)
+						break
+					}
+				}
+			}
+			projectsVal := "—"
+			projectsStyle := dimStyle2
+			if len(linked) > 0 {
+				projectsVal = strings.Join(linked, ", ")
+				projectsStyle = lipgloss.NewStyle().Foreground(colorInfo)
+			}
+
+			row := []string{
+				cell(instName, tableCols[0].width, baseStyle),
+				statusCell,
+				cell(fmt.Sprintf("%d", inst.Port), tableCols[2].width, dimStyle2),
+				cell(inst.Db, tableCols[3].width, baseStyle),
+				cell(inst.Version, tableCols[4].width, dimStyle2),
+				cell(projectsVal, tableCols[5].width, projectsStyle),
+			}
+			fmt.Println("  " + strings.Join(row, sep))
+			shown++
 		}
+
+		if shown == 0 && filterByProject {
+			fmt.Println()
+			PrintInfo(fmt.Sprintf("No instances linked to project %q.", currentProject))
+		}
+		fmt.Println()
 		return nil
 	},
 }
 
 func init() {
+	listCmd.Flags().BoolP("project", "p", false, "filter instances linked to the current project directory")
 	rootCmd.AddCommand(listCmd)
 }

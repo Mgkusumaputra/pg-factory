@@ -1,6 +1,3 @@
-/*
-Copyright © 2026 Mgkusumaputra
-*/
 package cmd
 
 import (
@@ -15,11 +12,25 @@ import (
 )
 
 var downCmd = &cobra.Command{
-	Use:   "down <name>",
+	Use:   "down [name]",
 	Short: "Stop a running Postgres instance",
-	Args:  cobra.ExactArgs(1),
+	Long: `Stop a running Postgres container without removing its data.
+
+When called without a name argument, pg down resolves the instance from the
+current project directory automatically (via ~/.pgfactory/projects.json).
+
+The container and volume are preserved; use pg up to restart later.
+Use pg prune to permanently delete the instance and all its data.
+
+Examples:
+  pg down           # stop the instance linked to the current project
+  pg down myapp     # stop a specific instance by name`,
+	Args: cobra.RangeArgs(0, 1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
+		name, err := resolveInstanceName(args)
+		if err != nil {
+			return err
+		}
 		containerName := "pgf-" + name
 
 		instancesPath, err := config.InstancesPath()
@@ -40,7 +51,7 @@ var downCmd = &cobra.Command{
 			}
 		}
 		if !found {
-			return fmt.Errorf("instance %q not found", name)
+			return fmt.Errorf("instance %q not found — run `pg list` to see available instances", name)
 		}
 
 		svc := docker.NewDockerService(30 * time.Second)
@@ -49,14 +60,16 @@ var downCmd = &cobra.Command{
 			return err
 		}
 		if !running {
-			fmt.Printf("Instance %q is already stopped.\n", name)
+			PrintInfo(fmt.Sprintf("Instance %q is already stopped.", name))
 			return nil
 		}
 
+		spin := NewSpinner(fmt.Sprintf("Stopping instance %q…", name))
 		if err := svc.StopContainer(containerName); err != nil {
+			spin.Stop("Failed to stop container", false)
 			return err
 		}
-		fmt.Printf("✓ Instance %q stopped.\n", name)
+		spin.Stop(fmt.Sprintf("Instance %q stopped", name), true)
 		return nil
 	},
 }

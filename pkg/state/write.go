@@ -34,6 +34,7 @@ func (s *Store) Write(v any) error {
 
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
+		os.Remove(tmp.Name()) // clean up – don't leave state-*.tmp debris
 		return err
 	}
 

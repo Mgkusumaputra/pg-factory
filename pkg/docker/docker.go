@@ -154,3 +154,30 @@ func (d *DockerService) RunPostgres(containerName, volumeName, version, user, pa
 	}
 	return nil
 }
+
+// RunningContainerNames returns a set of container names that are currently
+// running. Makes a single docker ps call regardless of instance count.
+func (d *DockerService) RunningContainerNames() (map[string]bool, error) {
+	stdout, _, err := d.RunCommand("ps", "--format", "{{.Names}}")
+	if err != nil {
+		return nil, err
+	}
+	running := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		name := strings.TrimSpace(line)
+		if name != "" {
+			running[name] = true
+		}
+	}
+	return running, nil
+}
+
+// RenameContainer renames a Docker container. Works whether the container is
+// running or stopped.
+func (d *DockerService) RenameContainer(oldName, newName string) error {
+	_, stderr, err := d.RunCommand("rename", oldName, newName)
+	if err != nil {
+		return fmt.Errorf("docker rename failed: %s", stderr)
+	}
+	return nil
+}

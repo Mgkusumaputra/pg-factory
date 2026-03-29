@@ -8,11 +8,14 @@ import (
 	"github.com/Mgkusumaputra/pg-factory/pkg/types"
 )
 
+// ErrNotFound is returned by Read when the state file does not exist yet.
+var ErrNotFound = errors.New("state file not found")
+
 func (s *Store) Read(v any) error {
 	f, err := os.Open(s.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errors.New("state file not found")
+			return ErrNotFound
 		}
 		return err
 	}
@@ -25,7 +28,7 @@ func (s *Store) Read(v any) error {
 func (s *Store) ReadInstances() (types.InstanceList, error) {
 	var list types.InstanceList
 	err := s.Read(&list)
-	if err != nil && err.Error() == "state file not found" {
+	if errors.Is(err, ErrNotFound) {
 		return types.InstanceList{}, nil
 	}
 	return list, err
