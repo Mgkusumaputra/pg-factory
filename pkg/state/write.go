@@ -39,6 +39,7 @@ func (s *Store) Write(v any) error {
 	}
 
 	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
 		return err
 	}
 

@@ -69,6 +69,7 @@ func (s *Store) Save(m ProjectMap) error {
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
 		return err
 	}
 	return os.Rename(tmp.Name(), s.Path)

@@ -77,7 +77,10 @@ pg init            # interactive setup: workstation scope, PG version, port
 pg create          # provisions a Postgres container named after the folder
 pg up              # start it again after a reboot
 pg down            # stop it (data is preserved)
+pg status          # check if it's running and see connection details
+pg connect         # open a psql shell (auto-resolved from cwd)
 pg list            # see all managed instances
+pg rename <old> <new>  # rename an instance
 pg prune           # permanently delete the instance and its data
 ```
 
@@ -220,10 +223,10 @@ pg list --project   # only instances for the current directory
 
 ### `pg connect`
 
-Opens an interactive `psql` shell for the named instance. If `psql` is not found on `PATH`, the connection string is printed instead.
+Opens an interactive `psql` shell for the named instance. When called without a name, the instance linked to the current project is resolved automatically from the cwd. If `psql` is not found on `PATH`, the connection string is printed instead.
 
 ```
-pg connect <name> [flags]
+pg connect [name] [flags]
 
 Flags:
   -P, --print   print the connection URL instead of launching psql
@@ -232,9 +235,10 @@ Flags:
 **Examples:**
 
 ```bash
-pg connect myapp            # open psql session
-pg connect myapp --print    # just print the URL
-pg connect myapp -P         # short flag alias
+pg connect              # open psql for the current project's instance
+pg connect myapp        # open psql session for a named instance
+pg connect myapp --print  # just print the URL
+pg connect myapp -P     # short flag alias
 ```
 
 ---
@@ -265,12 +269,60 @@ Completely removes pg-factory from the machine:
 - Stops and removes **all** managed containers and volumes
 - Deletes the `~/.pgfactory/` state directory
 - Removes the `pg` binary itself
+- Cleans up the `PATH` export added by the installer (bash/zsh)
 
 ```
-pg uninstall --yes
+pg uninstall [flags]
+
+Flags:
+  --yes       confirm destructive uninstall (required to actually delete)
+  --dry-run   preview what would be removed without touching anything
+```
+
+**Examples:**
+
+```bash
+pg uninstall --dry-run   # safe preview
+pg uninstall --yes       # actually uninstall
 ```
 
 The `--yes` flag is required as an explicit confirmation — this cannot be undone.
+
+---
+
+### `pg status`
+
+Shows the health, port, user, database, and version of a single instance. Auto-resolves from the current project directory when no name is given.
+
+```
+pg status [name]
+```
+
+**Examples:**
+
+```bash
+pg status          # status of the current project's instance
+pg status myapp    # status of a specific instance
+```
+
+---
+
+### `pg rename`
+
+Renames an instance — updates the Docker container name, `instances.json`, and any project links in `projects.json`.
+
+> **Note:** Docker volumes cannot be renamed. The underlying volume keeps its original Docker name, but all data is fully preserved.
+
+```
+pg rename <old-name> <new-name>
+```
+
+**Examples:**
+
+```bash
+pg rename myapp myapp-v2
+pg rename old-project new-project
+```
 
 ---
 
@@ -302,7 +354,7 @@ All state lives outside your projects, so you never accidentally commit credenti
 
 ### Project Auto-linking
 
-When you run `pg create` (or `pg up`) from a directory, pg-factory automatically links that directory's basename to the instance. This lets you run `pg up`, `pg down`, and `pg prune` **without specifying a name** — it resolves the right instance from your current folder.
+When you run `pg create` from a directory, pg-factory automatically links that directory's basename to the instance. This lets you run `pg up`, `pg down`, `pg status`, `pg connect`, and `pg prune` **without specifying a name** — it resolves the right instance from your current folder.
 
 ### `.env.local` Management
 
@@ -316,20 +368,21 @@ When you run `pg create` (or `pg up`) from a directory, pg-factory automatically
 pg-factory/
 ├── main.go                  # entry point
 ├── cmd/
-│   ├── root.go              # CLI root + lipgloss banner
+│   ├── root.go              # CLI root command
 │   ├── create.go            # pg create
-│   ├── up.go                # pg up + project resolution helper
+│   ├── up.go                # pg up + cwd project resolution helper
 │   ├── down.go              # pg down
 │   ├── list.go              # pg list / pg ls
 │   ├── connect.go           # pg connect
 │   ├── prune.go             # pg prune
-│   ├── uninstall.go         # pg uninstall
+│   ├── status.go            # pg status
+│   ├── rename.go            # pg rename
+│   ├── uninstall.go         # pg uninstall (+ platform-specific _unix/_windows)
 │   ├── envfile.go           # .env.local read/write helpers
 │   └── ui.go                # lipgloss styles, spinner, print helpers
 └── pkg/
-    ├── config/              # ~/.pgfactory/ path helpers
+    ├── config/              # ~/.pgfactory/ path helpers and global defaults
     ├── docker/              # docker CLI wrappers (run, start, stop, remove, health)
-    ├── environment/         # environment detection utilities
     ├── port/                # free-port finder
     ├── project/             # project ↔ instance linking store
     ├── state/               # instances.json read/write with file locking
