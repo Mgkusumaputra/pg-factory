@@ -3,7 +3,6 @@
 package cmd
 
 import (
-	"bufio"
 	"os"
 	"strings"
 )
@@ -42,40 +41,51 @@ func removePathExport() {
 	}
 }
 
-// scrubLines rewrites path, dropping any line that immediately follows a
-// marker comment AND the marker line itself.
+// scrubLines rewrites path, dropping each marker line, the export line that
+// follows it, and any blank lines that immediately precede the marker block.
+// The installer appends: blank → marker → export, so all three are removed.
 func scrubLines(path string, markers []string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	var out []string
-	skipNext := false
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if skipNext {
-			skipNext = false
-			continue // drop the `export PATH=…` line that follows
-		}
-		isMarker := false
+	isMarker := func(line string) bool {
+		trimmed := strings.TrimSpace(line)
 		for _, m := range markers {
-			if strings.TrimSpace(line) == m {
-				isMarker = true
-				break
+			if trimmed == m {
+				return true
 			}
 		}
-		if isMarker {
-			skipNext = true
-			continue // drop the marker line itself
-		}
-		out = append(out, line)
+		return false
 	}
-	if err := scanner.Err(); err != nil {
-		return err
+
+	// Build a set of line indices to drop.
+	drop := make(map[int]bool)
+	for i, line := range lines {
+		if isMarker(line) {
+			// Drop the marker itself.
+			drop[i] = true
+			// Drop the export line that follows (if any).
+			if i+1 < len(lines) {
+				drop[i+1] = true
+			}
+			// Drop any blank lines immediately before the marker.
+			for j := i - 1; j >= 0 && strings.TrimSpace(lines[j]) == ""; j-- {
+				drop[j] = true
+			}
+		}
+	}
+
+	var out []string
+	for i, line := range lines {
+		if !drop[i] {
+			out = append(out, line)
+		}
 	}
 
 	return os.WriteFile(path, []byte(strings.Join(out, "\n")+"\n"), 0644)
 }
+

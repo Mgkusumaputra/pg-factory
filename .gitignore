@@ -1,0 +1,24 @@
+# ── Compiled binaries ────────────────────────────────────────────────────────
+pg
+pg.exe
+pg_test
+pg_test.exe
+
+# ── Go toolchain ─────────────────────────────────────────────────────────────
+# Test binary (go test -c)
+*.test
+
+# Coverage output
+*.out
+
+# Vendored dependencies (not used, but guard anyway)
+vendor/
+
+# ── OS / editor noise ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# ── pgfactory local state (never belongs in the repo) ────────────────────────
+.pgfactory/

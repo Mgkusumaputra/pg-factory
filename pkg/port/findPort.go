@@ -1,25 +1,15 @@
 package port
 
 // FindFreePort returns the first port >= startPort that is not in use
-// locally (via netstat) or by any Docker container.
+// locally or by any running Docker container.
 func FindFreePort(startPort int) int {
-	port := startPort
-	for {
-		inUse := false
+	// Snapshot Docker's occupied ports once — avoids spawning docker ps
+	// in a tight loop for every candidate port.
+	dockerOccupied := occupiedDockerPorts()
 
-		// Check if the port is used locally
-		if checkLocalPort(port) {
-			inUse = true
+	for p := startPort; ; p++ {
+		if !checkLocalPort(p) && !dockerOccupied[p] {
+			return p
 		}
-
-		// Check if the port is used by Docker
-		if checkDockerPort(port) {
-			inUse = true
-		}
-
-		if !inUse {
-			return port
-		}
-		port++
 	}
 }

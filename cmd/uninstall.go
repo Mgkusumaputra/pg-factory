@@ -45,7 +45,10 @@ Examples:
 			return err
 		}
 
-		pgfDir, _ := config.Dir()
+		pgfDir, dirErr := config.Dir()
+		if dirErr != nil {
+			return dirErr
+		}
 		exePath, _ := os.Executable()
 
 		if dryRun {
@@ -94,11 +97,6 @@ Examples:
 		}
 
 		// 3. Wipe ~/.pgfactory/
-		var pgfErr error
-		pgfDir, pgfErr = config.Dir()
-		if pgfErr != nil {
-			return pgfErr
-		}
 		spin := NewSpinner(fmt.Sprintf("Removing state directory %s…", pgfDir))
 		if err := os.RemoveAll(pgfDir); err != nil {
 			spin.Stop("Could not remove state dir: "+err.Error(), false)
@@ -107,7 +105,6 @@ Examples:
 		}
 
 		// 4. Remove this binary
-		exePath, _ = os.Executable()
 		if exePath != "" {
 			spin2 := NewSpinner("Removing binary…")
 			if err := os.Remove(exePath); err != nil {

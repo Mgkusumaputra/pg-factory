@@ -52,7 +52,12 @@ fi
 success "pg installed → $GOBIN/pg"
 echo ""
 
-# ── first-time setup wizard (auto-triggered by the binary itself) ─────────────
-info "Launching first-time setup…"
-echo ""
-"$GOBIN/pg" init
+# ── first-time setup wizard ───────────────────────────────────────────────────
+PGFACTORY_CONFIG="${XDG_CONFIG_HOME:-$HOME}/.pgfactory/config.json"
+if [[ ! -f "$PGFACTORY_CONFIG" ]]; then
+  info "Launching first-time setup…"
+  echo ""
+  "$GOBIN/pg" init
+else
+  info "Config already exists. Run 'pg init' to reconfigure."
+fi
