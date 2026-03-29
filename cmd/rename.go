@@ -93,17 +93,15 @@ Examples:
 			ps := project.New(projectsPath)
 			pm, loadErr := ps.Load()
 			if loadErr == nil {
-				changed := false
 				for proj, instances := range pm {
 					for i, inst := range instances {
 						if inst == oldName {
 							pm[proj][i] = newName
-							changed = true
 						}
 					}
 				}
-				if changed {
-					_ = ps.Save(pm)
+				if saveErr := ps.Save(pm); saveErr != nil {
+					PrintWarn("project links could not be updated: " + saveErr.Error())
 				}
 			}
 		}

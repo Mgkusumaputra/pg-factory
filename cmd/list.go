@@ -106,9 +106,8 @@ Examples:
 
 		// ── Rows ─────────────────────────────────────────────────────────────
 		baseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0"))
-		dimStyle2  := lipgloss.NewStyle().Foreground(colorDim)
-		runStyle   := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
-		stopStyle  := lipgloss.NewStyle().Foreground(colorError)
+		runStyle  := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
+		stopStyle := lipgloss.NewStyle().Foreground(colorError)
 
 		shown := 0
 		for _, inst := range list.Instances {
@@ -148,7 +147,7 @@ Examples:
 				}
 			}
 			projectsVal := "—"
-			projectsStyle := dimStyle2
+			projectsStyle := DimStyle
 			if len(linked) > 0 {
 				projectsVal = strings.Join(linked, ", ")
 				projectsStyle = lipgloss.NewStyle().Foreground(colorInfo)
@@ -157,9 +156,9 @@ Examples:
 			row := []string{
 				cell(instName, tableCols[0].width, baseStyle),
 				statusCell,
-				cell(fmt.Sprintf("%d", inst.Port), tableCols[2].width, dimStyle2),
+				cell(fmt.Sprintf("%d", inst.Port), tableCols[2].width, DimStyle),
 				cell(inst.Db, tableCols[3].width, baseStyle),
-				cell(inst.Version, tableCols[4].width, dimStyle2),
+				cell(inst.Version, tableCols[4].width, DimStyle),
 				cell(projectsVal, tableCols[5].width, projectsStyle),
 			}
 			fmt.Println("  " + strings.Join(row, sep))

@@ -1,12 +1,9 @@
 package docker
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -32,54 +29,6 @@ func (d *DockerService) RunCommand(args ...string) (string, string, error) {
 
 	err := cmd.Run()
 	return stdout.String(), stderr.String(), err
-}
-
-// StreamCommand executes a docker command and streams output line by line.
-func (d *DockerService) StreamCommand(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), d.Timeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	go streamOutput(stdout, "OUT")
-
-	go streamOutput(stderr, "ERR")
-
-	return cmd.Wait()
-}
-
-// streamOutput helper to print lines from an io.Reader
-func streamOutput(r io.Reader, prefix string) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		fmt.Printf("[%s] %s\n", prefix, scanner.Text())
-	}
-}
-
-// InspectContainer parses JSON output of `docker inspect`.
-func (d *DockerService) InspectContainer(containerID string, target interface{}) error {
-	stdout, stderr, err := d.RunCommand("inspect", containerID)
-	if err != nil {
-		return fmt.Errorf("docker inspect error: %v, stderr: %s", err, stderr)
-	}
-
-	if err := json.Unmarshal([]byte(stdout), target); err != nil {
-		return fmt.Errorf("json parse error: %v", err)
-	}
-	return nil
 }
 
 // ContainerExists returns true if a container with the given name exists (running or stopped).

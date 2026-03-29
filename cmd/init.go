@@ -20,6 +20,10 @@ import (
 // is absent) and is also wired directly to "pg init" for reconfiguration.
 func RunInitWizard() error {
 	cwd, _ := os.Getwd()
+	cwdLabel := filepath.Base(cwd)
+	if cwd == "" || cwdLabel == "." {
+		cwdLabel = "current directory"
+	}
 
 	// ── Print banner / current-config summary ───────────────────────────────
 	fmt.Println()
@@ -64,7 +68,7 @@ func RunInitWizard() error {
 				Description("Where should pg-factory look for your projects?").
 				Options(
 					huh.NewOption(
-						fmt.Sprintf("Current directory  (%s)", filepath.Base(cwd)),
+						fmt.Sprintf("Current directory  (%s)", cwdLabel),
 						"cwd",
 					),
 					huh.NewOption(

@@ -92,9 +92,14 @@ func WriteDefaults(d Defaults) error {
 	if err != nil {
 		return err
 	}
+	// Write to a sibling temp file, then rename — atomic on POSIX and Windows.
 	tmp := p + ".tmp"
 	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp) // best-effort cleanup
+		return err
+	}
+	return nil
 }

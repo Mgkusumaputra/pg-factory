@@ -48,7 +48,7 @@ func (s *Store) Save(m ProjectMap) error {
 	if err != nil {
 		return err
 	}
-	defer unlockFile(lf) //nolint:errcheck
+	defer unlockFile(lf)
 
 	dir := filepath.Dir(s.Path)
 	tmp, err := os.CreateTemp(dir, "projects-*.tmp")
@@ -98,7 +98,7 @@ func (s *Store) Unlink(project, instance string) error {
 		return err
 	}
 	instances := m[project]
-	updated := instances[:0]
+	var updated []string
 	for _, v := range instances {
 		if v != instance {
 			updated = append(updated, v)

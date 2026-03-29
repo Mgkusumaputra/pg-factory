@@ -55,7 +55,12 @@ func writeEnvLocal(dir, connStr string) (created bool, err error) {
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	if err := os.WriteFile(envPath, []byte(content), 0644); err != nil {
+	tmpPath := envPath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+		return false, fmt.Errorf("could not update .env.local: %w", err)
+	}
+	if err := os.Rename(tmpPath, envPath); err != nil {
+		os.Remove(tmpPath)
 		return false, fmt.Errorf("could not update .env.local: %w", err)
 	}
 	return false, nil

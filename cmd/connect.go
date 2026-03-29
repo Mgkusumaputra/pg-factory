@@ -90,7 +90,7 @@ Examples:
 			return nil
 		}
 
-		psqlCmd := exec.Command(psqlPath, connStr)
+		psqlCmd := exec.Command(psqlPath, "-d", connStr)
 		psqlCmd.Stdin = os.Stdin
 		psqlCmd.Stdout = os.Stdout
 		psqlCmd.Stderr = os.Stderr

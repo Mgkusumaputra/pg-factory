@@ -35,7 +35,6 @@ Examples:
 			return err
 		}
 		containerName := "pgf-" + name
-		volumeName := "pgf-vol-" + name
 
 		instancesPath, err := config.InstancesPath()
 		if err != nil {
@@ -47,9 +46,14 @@ Examples:
 			return err
 		}
 
+		// Resolve volume name from state — the source of truth.
+		// Do NOT reconstruct as "pgf-vol-"+name; a renamed instance
+		// would have a different container name but the same old volume.
+		var volumeName string
 		found := false
 		for _, inst := range list.Instances {
 			if inst.Container == containerName {
+				volumeName = inst.Volume
 				found = true
 				break
 			}
@@ -61,7 +65,7 @@ Examples:
 		svc := docker.NewDockerService(30 * time.Second)
 		spin := NewSpinner(fmt.Sprintf("Pruning instance %q…", name))
 
-		// ── 1. Stop if running ─────────────────────────────────────────────────────────────────────
+		// ── 1. Stop if running ─────────────────────────────────────────────
 		running, err := svc.ContainerRunning(containerName)
 		if err != nil {
 			spin.Stop("Docker check failed", false)
@@ -75,7 +79,7 @@ Examples:
 			}
 		}
 
-		// ── 2. Remove container ──────────────────────────────────────────────
+		// ── 2. Remove container ───────────────────────────────────────────
 		exists, _ := svc.ContainerExists(containerName)
 		if exists {
 			spin.UpdateLabel(fmt.Sprintf("Removing container %q…", containerName))
@@ -85,11 +89,11 @@ Examples:
 			}
 		}
 
-		// ── 3. Remove volume (best-effort) ───────────────────────────────────
+		// ── 3. Remove volume (best-effort) ────────────────────────────────
 		spin.UpdateLabel(fmt.Sprintf("Removing volume %q…", volumeName))
 		_ = svc.RemoveVolume(volumeName)
 
-		// ── 4. Remove from state ─────────────────────────────────────────────
+		// ── 4. Remove from state ──────────────────────────────────────────
 		remaining := make([]types.Instance, 0, len(list.Instances))
 		for _, inst := range list.Instances {
 			if inst.Container != containerName {
