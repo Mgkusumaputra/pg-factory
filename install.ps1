@@ -40,8 +40,11 @@ $TargetExe = Join-Path $GoBin "pg.exe"
 # problem where go install always names the binary after the module path
 # ("pg-factory") rather than the intended command name ("pg").
 
-$ScriptDir = Split-Path -Parent $PSCommandPath
-$IsInRepo  = (Test-Path (Join-Path $ScriptDir "main.go")) -and
+# $PSCommandPath is empty when the script is piped via irm | iex (no file on disk).
+# In that case treat it as a remote install and go straight to the clone path.
+$ScriptDir = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { $null }
+$IsInRepo  = $ScriptDir -and
+             (Test-Path (Join-Path $ScriptDir "main.go")) -and
              (Test-Path (Join-Path $ScriptDir "go.mod"))
 
 if ($IsInRepo) {
