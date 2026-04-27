@@ -17,6 +17,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$MinGo = [Version]"1.25"
 
 $RepoUrl = "https://github.com/Mgkusumaputra/pg-factory.git"
 
@@ -27,10 +28,17 @@ function Write-Fail    ($msg) { Write-Host "  `u{2717} $msg" -ForegroundColor Re
 
 # ── check Go ──────────────────────────────────────────────────────────────────
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-    Write-Fail "Go 1.21+ is required. Install: https://go.dev/dl/"
+    Write-Fail "Go $($MinGo.ToString(2))+ is required. Install: https://go.dev/dl/"
 }
-$goVersion = (go env GOVERSION) -replace '^go', ''
-Write-Info "Found Go $goVersion"
+$goVersionRaw = ((go env GOVERSION).Trim() -replace '^go', '')
+if ($goVersionRaw -notmatch '^(?<Major>\d+)\.(?<Minor>\d+)') {
+    Write-Fail "Could not parse Go version from '$goVersionRaw'. Install Go $($MinGo.ToString(2))+."
+}
+$goVersion = [Version]::new([int]$Matches.Major, [int]$Matches.Minor)
+if ($goVersion -lt $MinGo) {
+    Write-Fail "Go $($MinGo.ToString(2))+ is required. Found Go $goVersionRaw."
+}
+Write-Info "Found Go $goVersionRaw"
 
 # ── check git ─────────────────────────────────────────────────────────────────
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {

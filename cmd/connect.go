@@ -65,8 +65,7 @@ Examples:
 			return fmt.Errorf("instance %q not found — run `pg list` to see available instances", name)
 		}
 
-		connStr := fmt.Sprintf("postgresql://%s:%s@localhost:%d/%s",
-			found.User, found.Password, found.Port, found.Db)
+		connStr := buildPostgresURL(found.User, found.Password, found.Port, found.Db)
 
 		if printOnly {
 			fmt.Println(connStr)

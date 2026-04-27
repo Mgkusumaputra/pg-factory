@@ -9,7 +9,7 @@
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) installed and running
-- [Go](https://go.dev/dl/) 1.21+ (to build from source)
+- [Go](https://go.dev/dl/) 1.25+ (to build from source)
 - `psql` (optional — only needed for `pg connect` interactive sessions)
 
 ---
@@ -31,12 +31,12 @@ irm https://raw.githubusercontent.com/Mgkusumaputra/pg-factory/main/install.ps1 
 ```
 
 The installer will:
-1. Verify Go 1.21+ and Docker are available
-2. Install the `pg` binary via `go install`
+1. Verify Go 1.25+ and Docker are available
+2. Build and install the `pg` binary from source
 3. Add the Go bin directory to your `PATH` if needed
 4. Automatically launch the first-time setup wizard (`pg init`)
 
-**Requirements:** [Go 1.21+](https://go.dev/dl/) · [Docker](https://docs.docker.com/get-docker/) · (optional) `psql` for `pg connect`
+**Requirements:** [Go 1.25+](https://go.dev/dl/) · [Docker](https://docs.docker.com/get-docker/) · (optional) `psql` for `pg connect`
 
 ---
 
@@ -133,7 +133,7 @@ Flags:
   -u, --user string      database username (default: "postgres")
   -s, --pass string      database password (default: "postgres")
   -d, --db string        database name (default: same as --name)
-  -p, --port int         preferred host port, auto-incremented if busy (default: from pg init)
+  -p, --port int         preferred host port (1024-65535), auto-incremented if busy (default: from pg init)
 ```
 
 
@@ -338,7 +338,7 @@ pg create
   │
   ├─ 3. ~/.pgfactory/instances.json      ← records the instance (port, user, db, version, …)
   │
-  ├─ 4. ~/.pgfactory/projects.json       ← links the current directory name → instance name
+  ├─ 4. ~/.pgfactory/projects.json       ← links the current directory path → instance name
   │
   └─ 5. .env.local in cwd               ← writes DATABASE_URL=postgresql://…
 ```
@@ -350,11 +350,11 @@ All state lives outside your projects, so you never accidentally commit credenti
 | File                | Contents                                          |
 |---------------------|---------------------------------------------------|
 | `instances.json`    | Array of all created instances with their metadata |
-| `projects.json`     | Map of project directory names → instance names   |
+| `projects.json`     | Map of project directory paths → instance names   |
 
 ### Project Auto-linking
 
-When you run `pg create` from a directory, pg-factory automatically links that directory's basename to the instance. This lets you run `pg up`, `pg down`, `pg status`, `pg connect`, and `pg prune` **without specifying a name** — it resolves the right instance from your current folder.
+When you run `pg create` from a directory, pg-factory automatically links that directory path to the instance. This avoids collisions between folders that share the same basename and still lets you run `pg up`, `pg down`, `pg status`, `pg connect`, and `pg prune` **without specifying a name** — it resolves the right instance from your current folder. Existing legacy basename links remain supported during lookup.
 
 ### `.env.local` Management
 
@@ -399,7 +399,7 @@ All flags have sensible defaults. The most commonly customised ones are:
 |-------------|---------------|----------------------------------------------------------|
 | `--name`    | directory name | Instance name. Also used as the Docker container prefix  |
 | `--version` | `16-alpine`   | Any valid `postgres` Docker Hub image tag                |
-| `--port`    | `5432`        | Preferred host port. Incremented automatically if in use |
+| `--port`    | `5432`        | Preferred host port (1024–65535). Incremented automatically if in use |
 | `--user`    | `postgres`    | Postgres superuser name                                  |
 | `--pass`    | `postgres`    | Postgres superuser password                              |
 | `--db`      | `--name` value | Database name created at init                           |

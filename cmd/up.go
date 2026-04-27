@@ -108,7 +108,7 @@ func resolveInstanceName(args []string) (string, error) {
 		return "", err
 	}
 	ps := project.New(projectsPath)
-	instances, err := ps.InstancesFor(projectSlug)
+	instances, err := linkedInstancesForDir(ps, cwd)
 	if err != nil {
 		return "", err
 	}

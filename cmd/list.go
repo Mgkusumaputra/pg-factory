@@ -73,6 +73,14 @@ Examples:
 
 		cwd, _ := os.Getwd()
 		currentProject := filepath.Base(cwd)
+		currentLinked := map[string]bool{}
+		if cwd != "" {
+			if linked, err := linkedInstancesForDir(ps, cwd); err == nil {
+				for _, instance := range linked {
+					currentLinked[instance] = true
+				}
+			}
+		}
 
 		svc := docker.NewDockerService(10 * time.Second)
 		runningSet, err := svc.RunningContainerNames()
@@ -106,7 +114,7 @@ Examples:
 
 		// ── Rows ─────────────────────────────────────────────────────────────
 		baseStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2e8f0"))
-		runStyle  := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
+		runStyle := lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
 		stopStyle := lipgloss.NewStyle().Foreground(colorError)
 
 		shown := 0
@@ -114,17 +122,8 @@ Examples:
 			instName := inst.Container[4:] // strip "pgf-"
 
 			// --project filter
-			if filterByProject {
-				linked := false
-				for _, n := range pm[currentProject] {
-					if n == instName {
-						linked = true
-						break
-					}
-				}
-				if !linked {
-					continue
-				}
+			if filterByProject && !currentLinked[instName] {
+				continue
 			}
 
 			isRunning := runningSet[inst.Container]
@@ -138,10 +137,15 @@ Examples:
 
 			// Collect linked project names
 			var linked []string
+			seenProjects := make(map[string]bool)
 			for proj, instances := range pm {
 				for _, n := range instances {
 					if n == instName {
-						linked = append(linked, proj)
+						display := displayProjectName(proj)
+						if !seenProjects[display] {
+							seenProjects[display] = true
+							linked = append(linked, display)
+						}
 						break
 					}
 				}

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -72,34 +73,53 @@ Examples:
 		}
 
 		svc := docker.NewDockerService(30 * time.Second)
+		var cleanupErrors []string
+		var cleanupWarnings []string
 
 		// 2. Stop + remove every managed container and volume
 		for _, inst := range list.Instances {
 			instName := inst.Container[4:] // strip "pgf-"
 			spin := NewSpinner(fmt.Sprintf("Removing instance %q…", instName))
+			var instanceErrors []string
 
-			running, _ := svc.ContainerRunning(inst.Container)
-			if running {
+			running, err := svc.ContainerRunning(inst.Container)
+			if err != nil {
+				instanceErrors = append(instanceErrors, fmt.Sprintf("%s: could not inspect running state: %v", instName, err))
+			} else if running {
 				spin.UpdateLabel(fmt.Sprintf("Stopping %q…", inst.Container))
-				_ = svc.StopContainer(inst.Container)
+				if err := svc.StopContainer(inst.Container); err != nil {
+					instanceErrors = append(instanceErrors, fmt.Sprintf("%s: failed to stop %s: %v", instName, inst.Container, err))
+				}
 			}
 
-			exists, _ := svc.ContainerExists(inst.Container)
-			if exists {
+			exists, err := svc.ContainerExists(inst.Container)
+			if err != nil {
+				instanceErrors = append(instanceErrors, fmt.Sprintf("%s: could not inspect container existence: %v", instName, err))
+			} else if exists {
 				spin.UpdateLabel(fmt.Sprintf("Removing container %q…", inst.Container))
-				_ = svc.RemoveContainer(inst.Container)
+				if err := svc.RemoveContainer(inst.Container); err != nil {
+					instanceErrors = append(instanceErrors, fmt.Sprintf("%s: failed to remove %s: %v", instName, inst.Container, err))
+				}
 			}
 
 			spin.UpdateLabel(fmt.Sprintf("Removing volume %q…", inst.Volume))
-			_ = svc.RemoveVolume(inst.Volume)
+			if err := svc.RemoveVolume(inst.Volume); err != nil {
+				instanceErrors = append(instanceErrors, fmt.Sprintf("%s: failed to remove volume %s: %v", instName, inst.Volume, err))
+			}
 
-			spin.Stop(fmt.Sprintf("Instance %q removed", instName), true)
+			if len(instanceErrors) > 0 {
+				spin.Stop(fmt.Sprintf("Instance %q removed with errors", instName), false)
+				cleanupErrors = append(cleanupErrors, instanceErrors...)
+			} else {
+				spin.Stop(fmt.Sprintf("Instance %q removed", instName), true)
+			}
 		}
 
 		// 3. Wipe ~/.pgfactory/
 		spin := NewSpinner(fmt.Sprintf("Removing state directory %s…", pgfDir))
 		if err := os.RemoveAll(pgfDir); err != nil {
 			spin.Stop("Could not remove state dir: "+err.Error(), false)
+			cleanupErrors = append(cleanupErrors, fmt.Sprintf("failed to remove state directory %s: %v", pgfDir, err))
 		} else {
 			spin.Stop("State directory removed", true)
 		}
@@ -109,6 +129,7 @@ Examples:
 			spin2 := NewSpinner("Removing binary…")
 			if err := os.Remove(exePath); err != nil {
 				spin2.Stop("Could not remove binary — delete it manually from your PATH", false)
+				cleanupWarnings = append(cleanupWarnings, fmt.Sprintf("binary still present at %s: %v", exePath, err))
 			} else {
 				spin2.Stop("Binary removed", true)
 			}
@@ -118,7 +139,14 @@ Examples:
 		// We attempt all common shell rc files; missing files are silently skipped.
 		removePathExport()
 
+		if len(cleanupErrors) > 0 {
+			return fmt.Errorf("uninstall completed with errors:\n- %s", strings.Join(cleanupErrors, "\n- "))
+		}
+
 		fmt.Println()
+		if len(cleanupWarnings) > 0 {
+			PrintWarn(strings.Join(cleanupWarnings, "\n"))
+		}
 		PrintSuccess("pg-factory uninstalled successfully.")
 		PrintInfo("If you installed on Windows, remove the Go bin path from your user PATH via System Settings.")
 		return nil

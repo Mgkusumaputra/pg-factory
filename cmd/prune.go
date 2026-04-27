@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -89,19 +90,30 @@ Examples:
 			}
 		}
 
-		// ── 3. Remove volume (best-effort) ────────────────────────────────
+		// ── 3. Remove volume ───────────────────────────────────────────────
 		spin.UpdateLabel(fmt.Sprintf("Removing volume %q…", volumeName))
-		_ = svc.RemoveVolume(volumeName)
+		if err := svc.RemoveVolume(volumeName); err != nil && !strings.Contains(err.Error(), "No such volume") {
+			spin.Stop("Failed to remove volume", false)
+			return err
+		}
 
-		// ── 4. Remove from state ──────────────────────────────────────────
-		remaining := make([]types.Instance, 0, len(list.Instances))
-		for _, inst := range list.Instances {
-			if inst.Container != containerName {
+		// ── 4. Remove from state (transactional) ──────────────────────────
+		if err := store.UpdateInstances(func(instances *types.InstanceList) error {
+			remaining := make([]types.Instance, 0, len(instances.Instances))
+			foundInState := false
+			for _, inst := range instances.Instances {
+				if inst.Container == containerName {
+					foundInState = true
+					continue
+				}
 				remaining = append(remaining, inst)
 			}
-		}
-		list.Instances = remaining
-		if err := store.WriteInstances(list); err != nil {
+			if !foundInState {
+				return fmt.Errorf("instance %q not found — run `pg list` to see available instances", name)
+			}
+			instances.Instances = remaining
+			return nil
+		}); err != nil {
 			spin.Stop("Failed to update state", false)
 			return err
 		}

@@ -63,6 +63,9 @@ Examples:
 		if db == "" {
 			db = name
 		}
+		if requestedPort < 1024 || requestedPort > 65535 {
+			return fmt.Errorf("invalid --port %d: must be between 1024 and 65535", requestedPort)
+		}
 
 		containerName := "pgf-" + name
 		volumeName := "pgf-vol-" + name
@@ -77,7 +80,10 @@ Examples:
 			return fmt.Errorf("instance %q already exists", name)
 		}
 
-		allocatedPort := port.FindFreePort(requestedPort)
+		allocatedPort, err := port.FindFreePort(requestedPort)
+		if err != nil {
+			return err
+		}
 
 		// ── Step 1: Start container ─────────────────────────────────────────
 		spin := NewSpinner(fmt.Sprintf("Creating container %q on port %d…", name, allocatedPort))
@@ -100,28 +106,34 @@ Examples:
 			return err
 		}
 		store := state.New(instancesPath)
-		list, err := store.ReadInstances()
-		if err != nil {
-			return err
-		}
-		list.Instances = append(list.Instances, types.Instance{
-			Container: containerName,
-			Volume:    volumeName,
-			Port:      allocatedPort,
-			User:      user,
-			Password:  pass,
-			Db:        db,
-			Version:   version,
-			CreatedAt: time.Now().Format(time.RFC3339),
-		})
-		if err := store.WriteInstances(list); err != nil {
+		if err := store.UpdateInstances(func(list *types.InstanceList) error {
+			for _, inst := range list.Instances {
+				if inst.Container == containerName {
+					return fmt.Errorf("instance %q already exists", name)
+				}
+			}
+			list.Instances = append(list.Instances, types.Instance{
+				Container: containerName,
+				Volume:    volumeName,
+				Port:      allocatedPort,
+				User:      user,
+				Password:  pass,
+				Db:        db,
+				Version:   version,
+				CreatedAt: time.Now().Format(time.RFC3339),
+			})
+			return nil
+		}); err != nil {
+			if rollbackErr := rollbackCreate(svc, containerName, volumeName); rollbackErr != nil {
+				PrintWarn("state update failed and rollback was incomplete: " + rollbackErr.Error())
+			}
 			return err
 		}
 
 		// ── Step 4: Auto-link project + write .env.local ────────────────────
-		connStr := fmt.Sprintf("postgresql://%s:%s@localhost:%d/%s", user, pass, allocatedPort, db)
-		linkedSlug, linkedCwd := autoLinkProject(name)
-		if linkedSlug != "" {
+		connStr := buildPostgresURL(user, pass, allocatedPort, db)
+		linkedProject, linkedCwd := autoLinkProject(name)
+		if linkedProject != "" {
 			created, envErr := writeEnvLocal(linkedCwd, connStr)
 			if envErr != nil {
 				PrintWarn(envErr.Error())
@@ -156,7 +168,7 @@ func init() {
 
 // autoLinkProject links the cwd to instanceName in the project store,
 // respecting the user's configured workstation scope.
-// Returns (projectSlug, cwd) on success, or ("", "") on any error or scope violation.
+// Returns (projectKey, cwd) on success, or ("", "") on any error or scope violation.
 // Errors are intentionally swallowed — project tracking is best-effort.
 func autoLinkProject(instanceName string) (slug string, cwd string) {
 	defs, _ := config.ReadDefaults()
@@ -173,15 +185,16 @@ func autoLinkProject(instanceName string) (slug string, cwd string) {
 		if defs.WorkstationPath == "" {
 			break
 		}
-		rel, err := filepath.Rel(defs.WorkstationPath, cwd)
-		if err != nil || strings.HasPrefix(rel, "..") {
+		base := canonicalProjectKey(defs.WorkstationPath)
+		rel, err := filepath.Rel(base, canonicalProjectKey(cwd))
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return "", "" // outside configured workstation — skip linking
 		}
 	case config.WorkstationCWD, config.WorkstationGlobal:
 		// No restriction — always link.
 	}
 
-	slug = filepath.Base(cwd)
+	slug = canonicalProjectKey(cwd)
 
 	projectsPath, err := config.ProjectsPath()
 	if err != nil {
@@ -200,12 +213,42 @@ func autoUnlinkProject(instanceName string) {
 	if err != nil {
 		return
 	}
-	projectSlug := filepath.Base(cwd)
-
 	projectsPath, err := config.ProjectsPath()
 	if err != nil {
 		return
 	}
 	ps := project.New(projectsPath)
-	_ = ps.Unlink(projectSlug, instanceName)
+	for _, key := range projectKeysForDir(cwd) {
+		_ = ps.Unlink(key, instanceName)
+	}
+}
+
+func rollbackCreate(svc *docker.DockerService, containerName, volumeName string) error {
+	var errs []string
+
+	running, err := svc.ContainerRunning(containerName)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("could not check container status: %v", err))
+	} else if running {
+		if err := svc.StopContainer(containerName); err != nil {
+			errs = append(errs, fmt.Sprintf("could not stop %s: %v", containerName, err))
+		}
+	}
+
+	exists, err := svc.ContainerExists(containerName)
+	if err != nil {
+		errs = append(errs, fmt.Sprintf("could not check container existence: %v", err))
+	} else if exists {
+		if err := svc.RemoveContainer(containerName); err != nil {
+			errs = append(errs, fmt.Sprintf("could not remove %s: %v", containerName, err))
+		}
+	}
+
+	if err := svc.RemoveVolume(volumeName); err != nil {
+		errs = append(errs, fmt.Sprintf("could not remove %s: %v", volumeName, err))
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(errs, "; "))
 }

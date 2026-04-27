@@ -9,15 +9,23 @@ import (
 )
 
 func (s *Store) Write(v any) error {
-	dir := filepath.Dir(s.Path)
-	lockPath := s.Path + ".lock"
+	return s.withLock(func() error {
+		return s.writeUnlocked(v)
+	})
+}
 
+func (s *Store) withLock(fn func() error) error {
+	lockPath := s.Path + ".lock"
 	lf, err := lockFile(lockPath)
 	if err != nil {
 		return err
 	}
 	defer unlockFile(lf)
+	return fn()
+}
 
+func (s *Store) writeUnlocked(v any) error {
+	dir := filepath.Dir(s.Path)
 	tmp, err := os.CreateTemp(dir, "state-*.tmp")
 	if err != nil {
 		return err
@@ -49,4 +57,4 @@ func (s *Store) Write(v any) error {
 // WriteInstances writes the instance list to the store atomically.
 func (s *Store) WriteInstances(list types.InstanceList) error {
 	return s.Write(list)
-}
+}

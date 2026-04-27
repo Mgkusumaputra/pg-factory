@@ -11,6 +11,7 @@ import (
 	"github.com/Mgkusumaputra/pg-factory/pkg/docker"
 	"github.com/Mgkusumaputra/pg-factory/pkg/project"
 	"github.com/Mgkusumaputra/pg-factory/pkg/state"
+	"github.com/Mgkusumaputra/pg-factory/pkg/types"
 )
 
 var renameCmd = &cobra.Command{
@@ -53,14 +54,14 @@ Examples:
 		}
 
 		// Ensure old instance exists.
-		foundIdx := -1
-		for i, inst := range list.Instances {
+		found := false
+		for _, inst := range list.Instances {
 			if inst.Container == oldContainer {
-				foundIdx = i
+				found = true
 				break
 			}
 		}
-		if foundIdx == -1 {
+		if !found {
 			return fmt.Errorf("instance %q not found — run `pg list` to see available instances", oldName)
 		}
 
@@ -80,10 +81,27 @@ Examples:
 		}
 		spin.Stop(fmt.Sprintf("Container renamed to %q", newContainer), true)
 
-		// Update instances.json — only the container name changes; volume keeps
-		// its original Docker name (Docker has no rename for volumes).
-		list.Instances[foundIdx].Container = newContainer
-		if err := store.WriteInstances(list); err != nil {
+		// Update instances.json transactionally — only the container name changes;
+		// volume keeps its original Docker name (Docker has no rename for volumes).
+		if err := store.UpdateInstances(func(instances *types.InstanceList) error {
+			foundOld := false
+			for _, inst := range instances.Instances {
+				if inst.Container == newContainer {
+					return fmt.Errorf("instance %q already exists — choose a different name", newName)
+				}
+			}
+			for i := range instances.Instances {
+				if instances.Instances[i].Container == oldContainer {
+					instances.Instances[i].Container = newContainer
+					foundOld = true
+					break
+				}
+			}
+			if !foundOld {
+				return fmt.Errorf("instance %q not found — run `pg list` to see available instances", oldName)
+			}
+			return nil
+		}); err != nil {
 			return fmt.Errorf("docker container renamed but failed to persist state: %w", err)
 		}
 
@@ -91,8 +109,7 @@ Examples:
 		projectsPath, err := config.ProjectsPath()
 		if err == nil {
 			ps := project.New(projectsPath)
-			pm, loadErr := ps.Load()
-			if loadErr == nil {
+			if updateErr := ps.Update(func(pm project.ProjectMap) error {
 				for proj, instances := range pm {
 					for i, inst := range instances {
 						if inst == oldName {
@@ -100,9 +117,9 @@ Examples:
 						}
 					}
 				}
-				if saveErr := ps.Save(pm); saveErr != nil {
-					PrintWarn("project links could not be updated: " + saveErr.Error())
-				}
+				return nil
+			}); updateErr != nil {
+				PrintWarn("project links could not be updated: " + updateErr.Error())
 			}
 		}
 

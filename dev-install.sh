@@ -15,6 +15,7 @@ set -euo pipefail
 REPO_URL="https://github.com/Mgkusumaputra/pg-factory.git"
 INSTALL_DIR="${PGFACTORY_SRC:-$HOME/src/pg-factory}"
 BIN_DIR="${PGFACTORY_BIN:-}"
+MIN_GO="1.25"
 
 # ── parse args ────────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -40,9 +41,28 @@ success() { printf '\033[0;32m  ✓ %s\033[0m\n' "$*"; }
 warn()    { printf '\033[0;33m  ⚠ %s\033[0m\n' "$*"; }
 error()   { printf '\033[0;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
+version_ge() {
+  local have="$1"
+  local need="$2"
+  local have_major have_minor need_major need_minor
+  IFS='.' read -r have_major have_minor _ <<< "$have"
+  IFS='.' read -r need_major need_minor _ <<< "$need"
+  if (( have_major > need_major )); then return 0; fi
+  if (( have_major < need_major )); then return 1; fi
+  (( have_minor >= need_minor ))
+}
+
 # ── check Go ──────────────────────────────────────────────────────────────────
-command -v go &>/dev/null || error "Go 1.21+ is required. Install: https://go.dev/dl/"
-info "Found Go $(go env GOVERSION | sed 's/go//')"
+command -v go &>/dev/null || error "Go $MIN_GO+ is required. Install: https://go.dev/dl/"
+GO_VERSION_RAW="$(go env GOVERSION | sed 's/^go//')"
+GO_VERSION="$(printf '%s' "$GO_VERSION_RAW" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')"
+if [[ ! "$GO_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+  error "Could not parse Go version from '$GO_VERSION_RAW'. Install Go $MIN_GO+."
+fi
+if ! version_ge "$GO_VERSION" "$MIN_GO"; then
+  error "Go $MIN_GO+ is required. Found Go $GO_VERSION_RAW."
+fi
+info "Found Go $GO_VERSION_RAW"
 
 # ── check Docker ──────────────────────────────────────────────────────────────
 command -v docker &>/dev/null || warn "Docker not found — needed at runtime. https://docs.docker.com/get-docker/"
@@ -76,7 +96,7 @@ info "Source at: $INSTALL_DIR"
 echo ""
 
 # ── first-time setup ──────────────────────────────────────────────────────────
-PGFACTORY_CONFIG="${XDG_CONFIG_HOME:-$HOME}/.pgfactory/config.json"
+PGFACTORY_CONFIG="$HOME/.pgfactory/config.json"
 if [[ ! -f "$PGFACTORY_CONFIG" ]]; then
   info "Launching first-time setup…"
   echo ""

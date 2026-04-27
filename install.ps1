@@ -2,12 +2,13 @@
 # Usage (run in PowerShell as your normal user — no Admin required):
 #   irm https://raw.githubusercontent.com/Mgkusumaputra/pg-factory/main/install.ps1 | iex
 #
-# Requires: Go 1.21+  |  Docker Desktop
+# Requires: Go 1.25+  |  Docker Desktop
 
 $ErrorActionPreference = 'Stop'
 
 $RepoURL = "https://github.com/Mgkusumaputra/pg-factory.git"
 $RepoGo  = "github.com/Mgkusumaputra/pg-factory"
+$MinGo   = [Version]"1.25"
 
 function Write-Info    ($msg) { Write-Host "  > $msg" -ForegroundColor Cyan }
 function Write-Success ($msg) { Write-Host "  + $msg" -ForegroundColor Green }
@@ -16,9 +17,17 @@ function Write-Fail    ($msg) { Write-Host "  x $msg" -ForegroundColor Red; exit
 
 # ── check Go ──────────────────────────────────────────────────────────────────
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-    Write-Fail "Go is not installed. Install Go 1.21+ from https://go.dev/dl/ then re-run."
+    Write-Fail "Go is not installed. Install Go $($MinGo.ToString(2))+ from https://go.dev/dl/ then re-run."
 }
-Write-Info "Found Go $((go env GOVERSION) -replace '^go','')"
+$GoVersionRaw = ((go env GOVERSION).Trim() -replace '^go','')
+if ($GoVersionRaw -notmatch '^(?<Major>\d+)\.(?<Minor>\d+)') {
+    Write-Fail "Could not parse Go version from '$GoVersionRaw'. Install Go $($MinGo.ToString(2))+."
+}
+$GoVersion = [Version]::new([int]$Matches.Major, [int]$Matches.Minor)
+if ($GoVersion -lt $MinGo) {
+    Write-Fail "Go $($MinGo.ToString(2))+ is required. Found Go $GoVersionRaw."
+}
+Write-Info "Found Go $GoVersionRaw"
 
 # ── check Docker ──────────────────────────────────────────────────────────────
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {

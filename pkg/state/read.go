@@ -11,7 +11,7 @@ import (
 // ErrNotFound is returned by Read when the state file does not exist yet.
 var ErrNotFound = errors.New("state file not found")
 
-func (s *Store) Read(v any) error {
+func (s *Store) readUnlocked(v any) error {
 	f, err := os.Open(s.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -21,6 +21,10 @@ func (s *Store) Read(v any) error {
 	}
 	defer f.Close()
 	return json.NewDecoder(f).Decode(v)
+}
+
+func (s *Store) Read(v any) error {
+	return s.readUnlocked(v)
 }
 
 // ReadInstances reads the instance list from the store.

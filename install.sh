@@ -5,7 +5,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/Mgkusumaputra/pg-factory.git"
 REPO_GO="github.com/Mgkusumaputra/pg-factory"
-MIN_GO="1.21"
+MIN_GO="1.25"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 info()    { printf '\033[0;36m  ▸ %s\033[0m\n' "$*"; }
@@ -13,13 +13,31 @@ success() { printf '\033[0;32m  ✓ %s\033[0m\n' "$*"; }
 warn()    { printf '\033[0;33m  ⚠ %s\033[0m\n' "$*"; }
 error()   { printf '\033[0;31m  ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
+version_ge() {
+  local have="$1"
+  local need="$2"
+  local have_major have_minor need_major need_minor
+  IFS='.' read -r have_major have_minor _ <<< "$have"
+  IFS='.' read -r need_major need_minor _ <<< "$need"
+  if (( have_major > need_major )); then return 0; fi
+  if (( have_major < need_major )); then return 1; fi
+  (( have_minor >= need_minor ))
+}
+
 # ── check Go ─────────────────────────────────────────────────────────────────
 if ! command -v go &>/dev/null; then
   error "Go is not installed. Install Go $MIN_GO+ from https://go.dev/dl/ then re-run."
 fi
 
-GO_VERSION=$(go env GOVERSION | sed 's/go//')
-info "Found Go $GO_VERSION"
+GO_VERSION_RAW="$(go env GOVERSION | sed 's/^go//')"
+GO_VERSION="$(printf '%s' "$GO_VERSION_RAW" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/')"
+if [[ ! "$GO_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+  error "Could not parse Go version from '$GO_VERSION_RAW'. Install Go $MIN_GO+ from https://go.dev/dl/."
+fi
+if ! version_ge "$GO_VERSION" "$MIN_GO"; then
+  error "Go $MIN_GO+ is required. Found Go $GO_VERSION_RAW."
+fi
+info "Found Go $GO_VERSION_RAW"
 
 # ── check Docker (warning only — needed at runtime, not install time) ─────────
 if ! command -v docker &>/dev/null; then

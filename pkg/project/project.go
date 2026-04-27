@@ -1,7 +1,8 @@
 // pkg/project/project.go
 // Tracks which project directories are linked to which pg-factory instances.
 // State is persisted to ~/.pgfactory/projects.json as a JSON object where
-// keys are project slugs (cwd basenames) and values are slices of instance names.
+// keys are project identifiers (canonical directory paths) and values are
+// slices of instance names.
 package project
 
 import (
@@ -10,7 +11,7 @@ import (
 	"path/filepath"
 )
 
-// ProjectMap maps project slugs to the instance names they reference.
+// ProjectMap maps project identifiers to the instance names they reference.
 type ProjectMap map[string][]string
 
 // Store persists project→instance links to a JSON file.
@@ -26,6 +27,10 @@ func New(path string) *Store {
 // Load reads the project map from disk. Returns an empty map if the file does
 // not exist yet.
 func (s *Store) Load() (ProjectMap, error) {
+	return s.loadUnlocked()
+}
+
+func (s *Store) loadUnlocked() (ProjectMap, error) {
 	data, err := os.ReadFile(s.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -37,19 +42,31 @@ func (s *Store) Load() (ProjectMap, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}
+	if m == nil {
+		return ProjectMap{}, nil
+	}
 	return m, nil
 }
 
 // Save writes the project map to disk atomically (lock-file + temp-rename).
 // Two concurrent pg create calls will not corrupt projects.json.
 func (s *Store) Save(m ProjectMap) error {
+	return s.withLock(func() error {
+		return s.saveUnlocked(m)
+	})
+}
+
+func (s *Store) withLock(fn func() error) error {
 	lockPath := s.Path + ".lock"
 	lf, err := lockFile(lockPath)
 	if err != nil {
 		return err
 	}
 	defer unlockFile(lf)
+	return fn()
+}
 
+func (s *Store) saveUnlocked(m ProjectMap) error {
 	dir := filepath.Dir(s.Path)
 	tmp, err := os.CreateTemp(dir, "projects-*.tmp")
 	if err != nil {
@@ -75,44 +92,57 @@ func (s *Store) Save(m ProjectMap) error {
 	return os.Rename(tmp.Name(), s.Path)
 }
 
+// Update runs a read-modify-write transaction for projects.json under one lock.
+func (s *Store) Update(mutator func(ProjectMap) error) error {
+	if mutator == nil {
+		return nil
+	}
+	return s.withLock(func() error {
+		m, err := s.loadUnlocked()
+		if err != nil {
+			return err
+		}
+		if err := mutator(m); err != nil {
+			return err
+		}
+		return s.saveUnlocked(m)
+	})
+}
+
 // Link records that instance is associated with project. Idempotent.
 func (s *Store) Link(project, instance string) error {
-	m, err := s.Load()
-	if err != nil {
-		return err
-	}
-	for _, existing := range m[project] {
-		if existing == instance {
-			return nil // already linked
+	return s.Update(func(m ProjectMap) error {
+		for _, existing := range m[project] {
+			if existing == instance {
+				return nil // already linked
+			}
 		}
-	}
-	m[project] = append(m[project], instance)
-	return s.Save(m)
+		m[project] = append(m[project], instance)
+		return nil
+	})
 }
 
 // Unlink removes the association between instance and project. No-op if not
 // linked.
 func (s *Store) Unlink(project, instance string) error {
-	m, err := s.Load()
-	if err != nil {
-		return err
-	}
-	instances := m[project]
-	var updated []string
-	for _, v := range instances {
-		if v != instance {
-			updated = append(updated, v)
+	return s.Update(func(m ProjectMap) error {
+		instances := m[project]
+		var updated []string
+		for _, v := range instances {
+			if v != instance {
+				updated = append(updated, v)
+			}
 		}
-	}
-	if len(updated) == 0 {
-		delete(m, project)
-	} else {
-		m[project] = updated
-	}
-	return s.Save(m)
+		if len(updated) == 0 {
+			delete(m, project)
+		} else {
+			m[project] = updated
+		}
+		return nil
+	})
 }
 
-// InstancesFor returns the instance names linked to a project slug.
+// InstancesFor returns the instance names linked to a project identifier.
 func (s *Store) InstancesFor(project string) ([]string, error) {
 	m, err := s.Load()
 	if err != nil {
@@ -121,7 +151,7 @@ func (s *Store) InstancesFor(project string) ([]string, error) {
 	return m[project], nil
 }
 
-// ProjectsFor returns all project slugs that are linked to a given instance.
+// ProjectsFor returns all project identifiers linked to a given instance.
 func (s *Store) ProjectsFor(instance string) ([]string, error) {
 	m, err := s.Load()
 	if err != nil {
