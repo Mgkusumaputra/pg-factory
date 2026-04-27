@@ -1,12 +1,21 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Mgkusumaputra/pg-factory/pkg/config"
 )
+
+var appVersion = "dev"
+
+// SetVersion is called from main to inject the build-time version.
+func SetVersion(v string) {
+	appVersion = v
+	rootCmd.Version = v
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "pg",
@@ -28,6 +37,18 @@ Commands:
   pg rename   Rename an instance
   pg init     (Re)configure global defaults
   pg uninstall Remove everything pg-factory installed`,
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print the pg-factory version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("pg-factory " + appVersion)
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(versionCmd)
 }
 
 func Execute() {
