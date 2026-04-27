@@ -9,11 +9,8 @@ import (
 	"github.com/Mgkusumaputra/pg-factory/pkg/config"
 )
 
-var appVersion = "dev"
-
 // SetVersion is called from main to inject the build-time version.
 func SetVersion(v string) {
-	appVersion = v
 	rootCmd.Version = v
 }
 
@@ -43,7 +40,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the pg-factory version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("pg-factory " + appVersion)
+		fmt.Printf("pg-factory %s\n", rootCmd.Version)
 	},
 }
 
